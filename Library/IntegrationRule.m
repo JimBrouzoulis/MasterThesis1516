@@ -11,9 +11,9 @@ classdef IntegrationRule < handle
         function obj = setupCubeRule(obj, ngp_xi, ngp_eta, ngp_zeta)
             
             %Get gauess weights and points
-            [gpx, gwx] = gausQuadTable(ngp_xi);
-            [gpy, gwy] = gausQuadTable(ngp_eta);
-            [gpz, gwz] = gausQuadTable(ngp_zeta);
+            [gpx, gwx] = lgwt(ngp_xi,-1,1);   %gausQuadTable(ngp_xi);
+            [gpy, gwy] = lgwt(ngp_eta,-1,1);  %gausQuadTable(ngp_eta);
+            [gpz, gwz] = lgwt(ngp_zeta,-1,1); %gausQuadTable(ngp_zeta);
             ngps = ngp_xi*ngp_eta*ngp_zeta;
             
             % allocate array with new Gauss points
