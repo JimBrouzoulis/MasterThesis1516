@@ -106,23 +106,39 @@ classdef SolidShell < handle
             %All dofs
             alldofs = 1:(obj.nDispDofs + obj.nStrainDofs + obj.nStressDofs);
             
-            %Bc on simga
-            %Bc för utbreddlast på konsolbalk, Txy noll på över och under
-            %rand
-%             sigmaBc = (obj.nStrainDofs+obj.nDispDofs) + [5:6:24, 53:6:obj.nStressDofs]';
+            TxyDofs = (obj.nStrainDofs+obj.nDispDofs) +  obj.stressInterp.getDofsFromNodes(5, [1 2 3 4 9 10 11 12],6);
+            SzzDofs = (obj.nStrainDofs+obj.nDispDofs) +  obj.stressInterp.getDofsFromNodes(3, [1:12],6);
             
-            %Bc för Txy noll på över och under-rand, + Szz noll på under
-            %rand
-            sigmaBc = (obj.nStrainDofs+obj.nDispDofs) + [5:6:24, 53:6:obj.nStressDofs, 3:6:24,  51:6:obj.nStressDofs]';
+            %%Bc on simga, %InterPolation z=3
+            %Bc för utbreddlast på konsolbalk
+            %Txy noll på över och under-rand
+%             sigmaBc = TxyDofs';
+            
+            %%Bc on sigma %InterPolation z=3
+            %Txy = 0, + Szz noll på under-rand + Szz = 40 på överrand
+            sigmaBc =  [TxyDofs, SzzDofs]';
+%             sigmaBc(end-3:end, 2) = [-40];            
+
+            %%Bc on simga, %InterPolation z=4 
+            %Bc för utbreddlast på konsolbalk
+            %Txy noll på över och under-rand
+%             sigmaBc =  TxyDofs';
+            
+            %%Bc on sigma %InterPolation z=4
+            %Txy = 0, + Szz noll på under-rand + Szz = 40 på överrand
+%             sigmaBc =  [TxyDofs, SzzDofs]';
+%              sigmaBc(end-3:end, 2) = [-40];   
+            
             sigmaBc = [sigmaBc, sigmaBc*0];
-            sigmaBc(end-3:end, 2) = [-40];
+            sigmaBc(end-7:end-4, 2) = [-20];
+            sigmaBc(end-3:end, 2) = [-40];  
             
             nSigmaPredescibed = size(sigmaBc,1);
             
             %Free dofs
             freedofs = setdiff(alldofs,sigmaBc(:,1));
             
-            %New matrices
+            %New matrices, with the known Beta-variables removed
             newK = K(freedofs,freedofs);
             newf = f(freedofs) - K(freedofs, sigmaBc(:,1))*sigmaBc(:,2);     
             
@@ -156,10 +172,13 @@ classdef SolidShell < handle
             
             %----
             allSigmaDofs = 1:obj.nStressDofs;
-%             sigmaLockedDofs = [5:6:24, 53:6:obj.nStressDofs]';
-            sigmaLockedDofs = [5:6:24, 53:6:obj.nStressDofs, 3:6:24,  51:6:obj.nStressDofs]';
-%             sigmaBc = [sigmaBc, sigmaBc*0];
+            
+            TxyDofs = obj.stressInterp.getDofsFromNodes(5, [1 2 3 4 9 10 11 12],6);
+            SzzDofs = obj.stressInterp.getDofsFromNodes(3, [1:12],6);
+            sigmaLockedDofs = SzzDofs';
+            
             sigmaBc = [sigmaLockedDofs, sigmaLockedDofs*0];
+            sigmaBc(end-7:end-4, 2) = [-20];
             sigmaBc(end-3:end, 2) = [-40];
             
             sigmaFreeDofs = setdiff(allSigmaDofs,sigmaLockedDofs);
@@ -335,6 +354,13 @@ classdef SolidShell < handle
  
         end
        
+        function P = getStressPmatrix(obj, lcoords)
+            
+           Pvec = stressInterp.eval_N(lcoords);
+           P    = stressInterp.createNmatrix(Nvec, 6);
+            
+        end
+        
         function Knum = computeNumTangent(obj, R0, ae, ex, ey, ez, D, delta)
             % delta - size of numerical perturbation
             neldofs = length(R0);
