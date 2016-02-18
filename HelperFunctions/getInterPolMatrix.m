@@ -1,7 +1,11 @@
 function [M] = getInterPolMatrix(opt)
 
 if(opt == 1)
-    M = @(xi,eta,zeta) [zeros(2,3); [0 0 zeta] ;zeros(1,3); [xi,0,0; 0,eta,0]];
+    M = @(xi,eta,zeta) [zeros(2,3); [0 0 zeta^3] ;zeros(1,3); [xi,0,0; 0,eta,0]];
+%     M = @(xi,eta,zeta) [zeros(2,4); [0 0 zeta zeta^2] ;zeros(1,4); [xi,0,0, 0; 0,eta,0, 0]];
+    
+%     M = @(xi,eta,zeta) [zeros(2,3); [0 0 zeta] ;zeros(1,3); [xi,0,0; 0,eta,0 ]];
+    
 % M = @(xi,eta,zeta) [zeros(4,1); [xi;0]];
 elseif(opt == 2)
     M = @(xi,eta,zeta) [zeros(4,8); [xi,zeta,0 0 xi*eta, xi*zeta,0,0; 0 0 eta, zeta, 0 0 xi*eta, eta*zeta]];

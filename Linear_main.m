@@ -30,7 +30,8 @@ nPassed = 1;
 f=zeros(ndofs,1);
 for elIndex = 1:nel
     % Compute element stiffness
-    el(elIndex) = SolidShell(3,3,3,3,Mhat);
+%     el(elIndex) = SolidShell(3,3,15,3,Mhat);
+    el(elIndex) = SolidShell2(3,3,15, [2 2 4 2 3 3], Mhat);
     
     [Ke,fe] = el(elIndex).computeLinearizedSystem(ex(:,elIndex)',ey(:,elIndex)',ez(:,elIndex)', [0,0,0]', D);
     elDofs = edof(:,elIndex);
@@ -49,7 +50,7 @@ end
 
 %Boundary condition
 [f, bc] = cubeBC( 'KonsolMedUtbredd', f, P*ly*lx, dof, side1nodes, side2nodes, side3nodes, side4nodes, side5nodes);
-% [f, bc] = cubeBC( 'Konsol          ', f, P      , dof, side1nodes, side2nodes, side3nodes, side4nodes, side5nodes);
+% [f, bc] = cubeBC( 'Konsol'            , f, P      , dof, side1nodes, side2nodes, side3nodes, side4nodes, side5nodes);
 
 %Create K
 K = sparse(rows,cols,data);
