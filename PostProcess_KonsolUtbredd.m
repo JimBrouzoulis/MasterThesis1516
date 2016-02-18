@@ -41,13 +41,14 @@ for iel = 1:nel
         
         %Calucalete stresses
         for iz = 1:length(plotZZlocal)
-            Nvec = el(iel).stressInterp.eval_N([plotXXlocal(ix) 0 plotZZlocal(iz)]);
-            N    = el(iel).stressInterp.createNmatrix(Nvec, 6);
-            tempStress = N*elStress(:,iel);
+            
+            Pstress = el(iel).getStressPmatrix([plotXXlocal(ix) 0 plotZZlocal(iz)]);
+
+            tempStress = Pstress*elStress(:,iel);
             
             %NOTE: Here you change what stress to plot
             %
-            plotStress(iz) = tempStress(5); %<---------------
+            plotStress(iz) = tempStress(3); %<---------------
         end
         
         %Analtycial values
@@ -57,8 +58,8 @@ for iel = 1:nel
         %Plot
         tf = subplot(1,3,ix);
         plot(plotStress,plotZZglobal);  hold on;
-        plot(tauxzAnalytical,plotZZglobal,'r')
-%         plot(sigzzAnalytical,plotZZglobal,'r')
+%         plot(tauxzAnalytical,plotZZglobal,'r')
+        plot(sigzzAnalytical,plotZZglobal,'r')
         
         title(sprintf('Element: %i, \n Local x-coord: [%0.3f]',iel, plotXXlocal(ix)));
         legend('FEM','Euler-Bernoulli')

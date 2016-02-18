@@ -41,8 +41,9 @@ for iel = 1:nel
         
         %Calucalete stresses
         for iz = 1:length(plotZZlocal)
-            Nvec = el(iel).stressInterp.eval_N([plotXXlocal(ix) 0 plotZZlocal(iz)]);
-            N    = el(iel).stressInterp.createNmatrix(Nvec, 6);
+            
+            N = el(iel).getStressPmatrix([plotXXlocal(ix) 0 plotZZlocal(iz)]);
+            
             tempStress = N*elStress(:,iel);
             
             %NOTE: Here you change what stress to plot
@@ -55,7 +56,7 @@ for iel = 1:nel
         sigzzAnalytical = sigzz(plotXXglobal(ix),plotZZglobal - lz/2,ly,lz,lx,P); %PPP **** LYYYYYY
         
         %Plot
-        tf = subplot(1,3,ix)
+        tf = subplot(1,3,ix);
         plot(plotStress,plotZZglobal);  hold on;
         plot(tauxzAnalytical,plotZZglobal,'r')
 %         plot(sigzzAnalytical,plotZZglobal,'r')
