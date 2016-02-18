@@ -31,6 +31,12 @@ classdef Interpolator
             
         end
         
+        function dofs = getDofsFromNodes(obj, component, nodes, dim)
+           
+            dofs = nodes*dim - (dim-component);
+            
+        end
+        
     end
     
 end
