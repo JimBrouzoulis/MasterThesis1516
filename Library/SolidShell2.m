@@ -48,7 +48,7 @@ classdef SolidShell2 < handle
             
         end
         
-        function [Kout, fout] = computeLinearizedSystem(obj, ex,ey,ez,eq, D)
+        function [Kout, fout] = computeLinearizedSystem(obj, ex,ey,ez,eq, eTrac, D)
             
             Ae = zeros(obj.nStressDofs, obj.nDispDofs  );
             Be = zeros(obj.nStressDofs, obj.nStrainDofs);
@@ -58,6 +58,7 @@ classdef SolidShell2 < handle
             Fe = zeros(obj.nDispDofs  , obj.nStressDofs);
             
             fe = zeros(obj.nDispDofs  , 1);
+            fT = zeros(obj.nDispDofs  , 1);
             
             for gp = obj.ir.gps
                 
@@ -94,7 +95,16 @@ classdef SolidShell2 < handle
                 Fe = Fe + B'*P    * dV;
                 
                 fe = fe + N'*eq   * dV;
+                
             end
+            
+            %Handle traction
+            AreaTemp = 4;
+            Ntrac = obj.dispInterp.eval_N([0 0 1]);
+            Ntrac  = obj.dispInterp.createNmatrix(Ntrac, 3);
+            ftrac = Ntrac'* eTrac * AreaTemp* (detJ*1000); %multiply by 1000 because detJ is for volume, not for area.
+%             
+            fe = fe+ftrac;
             
             obj.submatrices.Ae = Ae;
             obj.submatrices.Be = Be;
@@ -127,10 +137,10 @@ classdef SolidShell2 < handle
             TxyDofs = [txyb, txyt];%obj.getStressComponentDofs(5, [1 2 3 4 9 10 11 12]);
             SzzDofs = [szzb, szzt];%obj.getStressComponentDofs(3, [1 2 3 4 9:12]);
             
-            sigmaBc = (obj.nStrainDofs + obj.nDispDofs) + [TxyDofs, SzzDofs]';
+            sigmaBc = (obj.nStrainDofs + obj.nDispDofs) + [TxyDofs]';%, SzzDofs]';
             
             sigmaBc = [sigmaBc, sigmaBc*0];
-            sigmaBc(end-3:end, 2) = [-40];
+%             sigmaBc(end-3:end, 2) = [-40];
             
             nSigmaPredescibed = size(sigmaBc,1);
             
@@ -140,6 +150,15 @@ classdef SolidShell2 < handle
             %New matrices, with the known Beta-variables removed
             newK = K(freedofs,freedofs);
             newf = f(freedofs) - K(freedofs, sigmaBc(:,1))*sigmaBc(:,2);
+           
+            %%%%%% Inga randvilkor:
+            %%%
+            %
+%             newK = K; newf = f;
+%             nSigmaPredescibed = 0;
+            %
+            %%%
+            %%%%%
             
             %Static condenstation
             alldofs = 1:(obj.nDispDofs + obj.nStrainDofs + obj.nStressDofs - nSigmaPredescibed);
