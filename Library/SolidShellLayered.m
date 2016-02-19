@@ -1,38 +1,63 @@
-classdef SolidShell2 < handle
+classdef SolidShellLayered < handle
     %UNTITLED5 Summary of this class goes here
     %   Detailed explanation goes here
     
     properties
-        ir;% = IntegrationRule;
         
+        %Layered integration rule
+        lir;% = IntegrationRule;
+        
+        %Interolationrules
         dispInterp;
         stressInterp;
-        nStressInterp;
+        stressInterpOrder; %interpolation order for each stresss
         
+        %Dmatrices for each layer
         Dmatrices;
         
+        %
         submatrices;
         
+        %Interpolation matrix for strains
         Mhat = -1;
         
+        %Number of dofs
         nDispDofs = -1;
         nStrainDofs = -1;
         nStressDofs = -1;
+        nLamStrainDofs = -1;
         
+        %Element coords
         ez; ey; ex;
         
+        %Number of laminas
         nLam;
         
+        %Lamina z-cordinates in element-system and Global System
+        lamZCoordsL;
+        lamZCoordsG;
+        
+        %The deterimatant of each layer (always concstant for each element)
+        lay_detJ;
     end
     
     methods
-        function obj = SolidShell2(ngpx, ngpy, ngpz, ex, ey, ez, coords, angles, stressInterp, Mhat)
+        function obj = SolidShellLayered(ngpx, ngpy, ngpz, ex, ey, ez, stressInterp, Mhat, lamProp)
+            
+            lamZCoordsG = lamProp.coords;
+            lamAngles    = lamProp.angles;
+            D_LT = lamProp.D_LT;
+            
+            %Variable lamCoords are in the global system, convert to the
+            %element local system, from [-1 to 1]
+            obj.lamZCoordsL = (2*lamZCoordsG - (lamZCoordsG(end)+lamZCoordsG(1)))/(lamZCoordsG(end)-lamZCoordsG(1));
+            obj.lamZCoordsG = lamZCoordsG;
             
             %Number of layers
-            obj.nLam = length(angles);
+            obj.nLam = length(lamAngles);
             
             %Create integration rules
-            obj.ir.setupCubeRule(ngpx, ngpy, ngpz);
+            obj.lir = LayeredIntegrationRule(obj.nLam, ngpx, ngpy, ngpz);
             
             %Create Strain interpolation matrices
             obj.Mhat = Mhat;
@@ -41,104 +66,123 @@ classdef SolidShell2 < handle
             for ii=1:length(stressInterp)
                 val = stressInterp(ii);
                 if(val == 2)
-                    hej(ii) = {InterpolatorX2Y2Z2};
                     obj.stressInterp{ii} = InterpolatorX2Y2Z2;
                 elseif(val == 3)
-                    hej(ii) = {InterpolatorX2Y2Z3};
                     obj.stressInterp{ii} = InterpolatorX2Y2Z3;
                 elseif(val == 4)
-                    hej(ii) = {InterpolatorX2Y2Z4};
                     obj.stressInterp{ii} = InterpolatorX2Y2Z4;
                 else
                     error('Interpolator not implemented yet.');
                 end
             end
-            obj.nStressInterp = stressInterp;
+            obj.stressInterpOrder = stressInterp;
             
             %Define number of dofs
-            obj.nStrainDofs = size(Mhat(0,0,0),2);
+            obj.nLamStrainDofs = size(Mhat(0,0,0),2);
+            obj.nStrainDofs = obj.nLamStrainDofs * obj.nLam;
             obj.nStressDofs = sum(stressInterp*2*2);
             obj.nDispDofs = 3*2*2*2; %*nnoz??
             
             %Define D-matrices
             for id = 1:obj.nLam
-                
+                T1 = rotmat(lamAngles(id),1); T2 = rotmat(lamAngles(id),2);
+                obj.Dmatrices(:,:,id) = T1^-1 * D_LT * T2;
             end
             
             %Save element coords
             obj.ex = ex; obj.ey = ey; obj.ez = ez;
             
             %Interpolation for displacement always the same
-            dispInterp = InterpolatorX2Y2Z2;
+            obj.dispInterp = InterpolatorX2Y2Z2;
+            
+            %Layers determinant
+            for il = 1:obj.nLam
+                
+            end
             
         end
         
-        function [Kout, fout] = computeLinearizedSystem(obj, ex,ey,ez,eq, D)
+        function [Kout, fout] = computeLinearizedSystem(obj,eq,eTrac)
             
-            Ae = zeros(obj.nStressDofs, obj.nDispDofs  );
-            Be = zeros(obj.nStressDofs, obj.nStrainDofs);
-            Ce = zeros(obj.nStressDofs, obj.nStressDofs);
-            De = zeros(obj.nStrainDofs, obj.nDispDofs);
-            Ee = zeros(obj.nStrainDofs, obj.nStrainDofs);
-            Fe = zeros(obj.nDispDofs  , obj.nStressDofs);
+            Ae = zeros(obj.nLamStrainDofs, obj.nDispDofs , obj.nLam);
+            Le = zeros(obj.nStressDofs, obj.nLamStrainDofs , obj.nLam);
+            Ce = zeros(obj.nLamStrainDofs, obj.nLamStrainDofs , obj.nLam);
+            Re = zeros(obj.nStressDofs, obj.nDispDofs);
+            Qe = zeros(obj.nStressDofs, obj.nStressDofs);
+            Ke = zeros(obj.nDispDofs  , obj.nStressDofs);
             
             fe = zeros(obj.nDispDofs  , 1);
             
-            for gp = obj.ir.gps
+            V = 0;
+            for ilay = 1:obj.nLam
                 
-                %Gauss coordinates
-                lcoords = gp.local_coords;
+                layD = obj.Dmatrices(:,:,ilay);
                 
-                %N-vector
-                Nvec = obj.dispInterp.eval_N(lcoords);
-                
-                %Derivatives of n-vector
-                [dNdx, detJ] = obj.dispInterp.eval_dNdx(lcoords, ex, ey, ez);
-                
-                %Get N and B matrix used in FEM
-                [N, B] = solid8NandBmatrix(Nvec, dNdx);
-                
-                %Enanced part
-                M = obj.Mhat(lcoords(1), lcoords(2), lcoords(3));
-                
-                %Stress part
-                P = [];
-                for is = 1:length(obj.stressInterp)
-                    NvecSigma = obj.stressInterp{is}.eval_N(lcoords);
-                    P = blkdiag(P,NvecSigma);
-                end
-                
-                %Integrattion
-                dV = detJ * gp.weight;
-                
-                Ae = Ae + -P'*D*B * dV;
-                Be = Be + -P'*D*M * dV;
-                Ce = Ce + P'*P    * dV;
-                De = De + M'*D*B  * dV;
-                Ee = Ee + M'*D*M  * dV;
-                Fe = Fe + B'*P    * dV;
-                
-                fe = fe + N'*eq   * dV;
+                for gp = obj.lir.irs(ilay).gps
+
+                    %Gauss coordinates in local-layer-system and
+                    %local-element-system (only need to map the z-coord
+                    %since the x and y-coords should be the same 
+                    lcoords = gp.local_coords; 
+                    ecoords = lcoords;
+                    ecoords(3) = obj.lir.getElementGaussCoordinate(ilay, lcoords(3), obj.lamZCoordsL(ilay:ilay+1));
+                    
+                    %N-vector, eval in element-system
+                    Nvec = obj.dispInterp.eval_N(ecoords);
+
+                    %Derivatives of n-vector
+                    [dNdx, detJEl] = obj.dispInterp.eval_dNdx(ecoords, obj.ex, obj.ey, obj.ez);
+
+                    %Get detJ for the layer
+                    layZ = [[1,1,1,1]*obj.lamZCoordsG(ilay), [1,1,1,1]*obj.lamZCoordsG(ilay+1)];
+                    [~, detJ] = obj.dispInterp.eval_dNdx(ecoords, obj.ex, obj.ey, layZ);
+                    
+                    %Get N and B matrix used in FEM
+                    [N, B] = solid8NandBmatrix(Nvec, dNdx);
+
+                    %Enanced part, eval in layered-system
+                    Mi = obj.Mhat(lcoords(1), lcoords(2), lcoords(3));
+
+                    %Stress part, eval in element-system
+                    P = [];
+                    for is = 1:length(obj.stressInterp)
+                        NvecSigma = obj.stressInterp{is}.eval_N(ecoords);
+                        P = blkdiag(P,NvecSigma);
+                    end
+
+                    %Integrattion
+                    dV = detJ * gp.weight;
+                    V = V + 1*dV;
+                    Ae(:,:,ilay) = Ae(:,:,ilay) + Mi'*layD*B  * dV;
+                    Ce(:,:,ilay) = Ce(:,:,ilay) + Mi'*layD*Mi * dV;
+                    Le(:,:,ilay) = Le(:,:,ilay) + P'*layD*Mi  * dV;
+                    Ke =           Ke           + B'*P        * dV;
+                    Re =           Re           + P'*layD*B   * dV;
+                    Qe =           Qe           + P'*P        * dV;
+                                       
+                    fe = fe + N'*eq   * dV;
+                end                
+            end
+            AreaTemp = 4;
+            Ntrac = obj.dispInterp.eval_N([0 0 1]);
+            Ntrac  = obj.dispInterp.createNmatrix(Ntrac, 3);
+            ftrac = Ntrac'* eTrac * AreaTemp* (detJEl*1000); %multiply by a 1000 because detJ is for volume, not for area.
+            
+            fe = fe+ftrac;
+            
+            AA = []; LL = []; CC = [];
+            for il = 1:obj.nLam
+               AA = [AA; Ae(:,:,il)];
+               CC = blkdiag(CC, Ce(:,:,il));
+               LL = [LL, Le(:,:,il)];
             end
             
-            obj.submatrices.Ae = Ae;
-            obj.submatrices.Be = Be;
-            obj.submatrices.Ce = Ce;
-            obj.submatrices.De = De;
-            obj.submatrices.Ee = Ee;
-            obj.submatrices.Fe = Fe;
-            
-            
-            O1 = zeros(obj.nStrainDofs,obj.nStressDofs);
-            O2 = zeros(obj.nDispDofs, obj.nDispDofs);
-            O3 = zeros(obj.nDispDofs, obj.nStrainDofs);
-            
-            K = [O2, O3, Fe;...
-                 De, Ee, O1;... 
-                 Ae, Be, Ce]; 
+            O1 = zeros(obj.nDispDofs, obj.nDispDofs + obj.nStrainDofs);
+            O2 = zeros(obj.nStrainDofs, obj.nStressDofs);
+            K = [O1, Ke; AA, CC O2; Re, LL, -Qe];
             
             f = [fe; zeros(obj.nStrainDofs + obj.nStressDofs,1)];
-            
+%             keyboard;
             %We have bc on the stress variables beta, handle it:
             %All dofs
             alldofs = 1:(obj.nDispDofs + obj.nStrainDofs + obj.nStressDofs);
@@ -146,7 +190,8 @@ classdef SolidShell2 < handle
             %%Bc on simga, %InterPolation z=3
             %Bc för utbreddlast på konsolbalk
             %Txy noll på över och under-rand
-            TxyDofs = obj.getStressComponentDofs(5, [1 2 3 4 9 10 11 12]);
+            [TxybDofs, TxytDofs]  = obj.getStressComponentTopAndBottonDofs(5);
+            TxyDofs = [TxybDofs, TxytDofs];
             sigmaBc = (obj.nStrainDofs+obj.nDispDofs) + TxyDofs';
             
             sigmaBc = [sigmaBc, sigmaBc*0];
@@ -159,6 +204,15 @@ classdef SolidShell2 < handle
             newK = K(freedofs,freedofs);
             newf = f(freedofs) - K(freedofs, sigmaBc(:,1))*sigmaBc(:,2);
             
+            %%%%%% INGA randvilkor:
+            %%%
+            %
+%             newK = K; newf = f;
+%             nSigmaPredescibed = 0;
+            %
+            %%%
+            %%%%%
+            
             %Static condenstation
             alldofs = 1:(obj.nDispDofs + obj.nStrainDofs + obj.nStressDofs - nSigmaPredescibed);
             i = 1:obj.nDispDofs;
@@ -166,15 +220,6 @@ classdef SolidShell2 < handle
             
             Kout = newK(i,i) - newK(i,d)*inv(newK(d,d))*newK(d,i);
             fout = newf(i) - newK(i,d)*inv(newK(d,d))*newf(d);
-            
-            %Static condenstation
-            %             alldofs = 1:(obj.nDispDofs + obj.nStrainDofs + obj.nStressDofs);
-            %             i = 1:obj.nDispDofs;
-            %             d = setdiff(alldofs,i);
-            %
-            %             Kout = K(i,i) - K(i,d)*inv(K(d,d))*K(d,i);
-            %             fout = f(i);
-            
         end
         
         function beta = computeStress(obj,ex,ey,ez,a,D)
@@ -380,16 +425,43 @@ classdef SolidShell2 < handle
         end
         
         function dofs = getStressComponentDofs(obj, component, nodes)
-           
-            ss = obj.nStressInterp;
+            
+            ss = obj.stressInterpOrder;
             
             startFrom = 0;
             for i=1:(component-1)
-               temp = ss(i)*2*2 ;
-               startFrom = startFrom + temp;
+                temp = ss(i)*2*2 ;
+                startFrom = startFrom + temp;
             end
             
             dofs = startFrom + nodes;
+            
+        end
+        
+        function [bottomDofs, topDofs] = getStressComponentTopAndBottonDofs(obj, component)
+            
+            ss = obj.stressInterpOrder;
+            
+            startFrom = 0;
+            for i=1:(component-1)
+                temp = ss(i)*2*2 ;
+                startFrom = startFrom + temp;
+            end
+            
+            temp = 1:obj.stressInterpOrder(component)*2*2;
+            
+            dofs = startFrom + [temp(1:4), temp((end-3):end) ];
+            bottomDofs = dofs(1:4);
+            topDofs    = dofs(5:8);
+        end
+        
+        function P = getStressPmatrix(obj, lcoords)
+            
+            P = [];
+            for is = 1:length(obj.stressInterp)
+                NvecSigma = obj.stressInterp{is}.eval_N(lcoords);
+                P = blkdiag(P,NvecSigma);
+            end
             
         end
     end
