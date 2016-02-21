@@ -1,6 +1,6 @@
 classdef SolidShellLayered < handle
-    %UNTITLED5 Summary of this class goes here
-    %   Detailed explanation goes here
+    %SolidShellLayered Sold-shell element for a laminate with different ply
+    %properties.
     
     properties
         
@@ -12,10 +12,6 @@ classdef SolidShellLayered < handle
         stressInterp;
         stressInterpOrder; %interpolation order for each stresss
         
-        %Dmatrices for each layer
-        Dmatrices;
-        
-        %
         submatrices;
         
         %Interpolation matrix for strains
@@ -33,31 +29,18 @@ classdef SolidShellLayered < handle
         %Number of laminas
         nLam;
         
-        %Lamina z-cordinates in element-system and Global System
-        lamZCoordsL;
-        lamZCoordsG;
-        
         %The deterimatant of each layer (always concstant for each element)
         lay_detJ;
     end
     
     methods
-        function obj = SolidShellLayered(ngpx, ngpy, ngpz, ex, ey, ez, stressInterp, Mhat, lamProp)
-            
-            lamZCoordsG = lamProp.coords;
-            lamAngles    = lamProp.angles;
-            D_LT = lamProp.D_LT;
-            
-            %Variable lamCoords are in the global system, convert to the
-            %element local system, from [-1 to 1]
-            obj.lamZCoordsL = (2*lamZCoordsG - (lamZCoordsG(end)+lamZCoordsG(1)))/(lamZCoordsG(end)-lamZCoordsG(1));
-            obj.lamZCoordsG = lamZCoordsG;
-            
+        function obj = SolidShellLayered(ngpx, ngpy, ngpz, ex, ey, ez, stressInterp, Mhat, elprop)
+                
             %Number of layers
-            obj.nLam = length(lamAngles);
+            obj.nLam = elprop.nLam;
             
             %Create integration rules
-            obj.lir = LayeredIntegrationRule(obj.nLam, ngpx, ngpy, ngpz);
+            obj.lir = LayeredIntegrationRule(elprop.nLam, ngpx, ngpy, ngpz);
             
             %Create Strain interpolation matrices
             obj.Mhat = Mhat;
@@ -83,26 +66,15 @@ classdef SolidShellLayered < handle
             obj.nStressDofs = sum(stressInterp*2*2);
             obj.nDispDofs = 3*2*2*2; %*nnoz??
             
-            %Define D-matrices
-            for id = 1:obj.nLam
-                T1 = rotmat(lamAngles(id),1); T2 = rotmat(lamAngles(id),2);
-                obj.Dmatrices(:,:,id) = T1^-1 * D_LT * T2;
-            end
-            
             %Save element coords
             obj.ex = ex; obj.ey = ey; obj.ez = ez;
             
             %Interpolation for displacement always the same
             obj.dispInterp = InterpolatorX2Y2Z2;
             
-            %Layers determinant
-            for il = 1:obj.nLam
-                
-            end
-            
         end
         
-        function [Kout, fout] = computeLinearizedSystem(obj,eq,eTrac)
+        function [Kout, fout] = computeLinearizedSystem(obj,eq,eTrac, elprop)
             
             Ae = zeros(obj.nLamStrainDofs, obj.nDispDofs , obj.nLam);
             Le = zeros(obj.nStressDofs, obj.nLamStrainDofs , obj.nLam);
@@ -116,7 +88,7 @@ classdef SolidShellLayered < handle
             V = 0;
             for ilay = 1:obj.nLam
                 
-                layD = obj.Dmatrices(:,:,ilay);
+                layD = elprop.Dmatrices(:,:,ilay);
                 
                 for gp = obj.lir.irs(ilay).gps
 
@@ -125,7 +97,8 @@ classdef SolidShellLayered < handle
                     %since the x and y-coords should be the same 
                     lcoords = gp.local_coords; 
                     ecoords = lcoords;
-                    ecoords(3) = obj.lir.getElementGaussCoordinate(ilay, lcoords(3), obj.lamZCoordsL(ilay:ilay+1));
+                    ecoords(3) = obj.lir.getElementGaussCoordinate(ilay,...
+                        lcoords(3), elprop.int_coordsL(ilay:ilay+1));
                     
                     %N-vector, eval in element-system
                     Nvec = obj.dispInterp.eval_N(ecoords);
@@ -133,24 +106,26 @@ classdef SolidShellLayered < handle
                     %Derivatives of n-vector
                     [dNdx, detJEl] = obj.dispInterp.eval_dNdx(ecoords, obj.ex, obj.ey, obj.ez);
 
-                    %Get detJ for the layer
-                    layZ = [[1,1,1,1]*obj.lamZCoordsG(ilay), [1,1,1,1]*obj.lamZCoordsG(ilay+1)];
+                    % Get detJ for the layer
+                    layZ = [[1,1,1,1]*elprop.int_coordsG(ilay), [1,1,1,1]*elprop.int_coordsG(ilay+1)];
                     [~, detJ] = obj.dispInterp.eval_dNdx(ecoords, obj.ex, obj.ey, layZ);
                     
-                    %Get N and B matrix used in FEM
+                    % Get N and B matrix used in FEM
                     [N, B] = solid8NandBmatrix(Nvec, dNdx);
 
-                    %Enanced part, eval in layered-system
+                    % Enanced part, eval in layered-system
                     Mi = obj.Mhat(lcoords(1), lcoords(2), lcoords(3));
 
-                    %Stress part, eval in element-system
+                    % Stress part, eval in element-system
                     P = [];
+                    % Varför inte är inte alla 6 spänningskomponenter med? /JB
                     for is = 1:length(obj.stressInterp)
                         NvecSigma = obj.stressInterp{is}.eval_N(ecoords);
+                        % TODO: Mycket långsamt med blkdiag! /JB
                         P = blkdiag(P,NvecSigma);
                     end
 
-                    %Integrattion
+                    % Integration
                     dV = detJ * gp.weight;
                     V = V + 1*dV;
                     Ae(:,:,ilay) = Ae(:,:,ilay) + Mi'*layD*B  * dV;
@@ -165,10 +140,12 @@ classdef SolidShellLayered < handle
             end
             AreaTemp = 4;
             Ntrac = obj.dispInterp.eval_N([0 0 1]);
-            Ntrac  = obj.dispInterp.createNmatrix(Ntrac, 3);
+            Ntrac = obj.dispInterp.createNmatrix(Ntrac, 3);
+            
+            % Förstår ej 1000-faktorn /JB
             ftrac = Ntrac'* eTrac * AreaTemp* (detJEl*1000); %multiply by a 1000 because detJ is for volume, not for area.
             
-            fe = fe+ftrac;
+            fe = fe + ftrac;
             
             AA = []; LL = []; CC = [];
             for il = 1:obj.nLam
@@ -214,7 +191,8 @@ classdef SolidShellLayered < handle
             %%%%%
             
             %Static condenstation
-            alldofs = 1:(obj.nDispDofs + obj.nStrainDofs + obj.nStressDofs - nSigmaPredescibed);
+            nDofs = obj.nDispDofs + obj.nStrainDofs + obj.nStressDofs;
+            alldofs = 1:(nDofs - nSigmaPredescibed);
             i = 1:obj.nDispDofs;
             d = setdiff(alldofs,i);
             
@@ -247,6 +225,7 @@ classdef SolidShellLayered < handle
             beta(sigmaFreeDofs) = Ce(sigmaFreeDofs, sigmaFreeDofs)\(tempF(sigmaFreeDofs) - Ce(sigmaFreeDofs,sigmaLockedDofs)*sigmaBc(:,2));
         end
         
+        % TODO Old method - needs rewriting
         function R = computeR(obj,a,ex,ey,ez,D) % residual
             error('Not ready for use, Update the Interpolator-changes');
             
